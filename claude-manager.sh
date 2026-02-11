@@ -13,9 +13,24 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# 获取所有 claude 进程
+# 获取所有 claude 进程（只获取顶级进程，排除子进程）
 get_claude_processes() {
-    ps aux | grep -i 'claude' | grep -v grep | grep -v 'claude-code-acp' | grep -v 'context7-mcp'
+    # 首先获取所有可能的 claude 进程 PID
+    local all_pids=$(ps aux | grep -i 'claude' | grep -v grep | grep -v 'claude-code-acp' | grep -v 'context7-mcp' | awk '{print $2}')
+
+    # 过滤掉父进程也是 claude 的子进程，用 awk 精确匹配输出完整行
+    for pid in $all_pids; do
+        # 跳过已结束的进程
+        ps -p "$pid" > /dev/null 2>&1 || continue
+
+        local ppid=$(ps -p "$pid" -o ppid= | tr -d ' ')
+        local parent_comm=$(ps -p "$ppid" -o comm= 2>/dev/null || echo "")
+
+        # 只显示父进程不是 claude 的进程
+        if [[ "$parent_comm" != "claude" ]]; then
+            ps aux | awk -v pid="$pid" '$2 == pid'
+        fi
+    done || true
 }
 
 # 获取进程的工作目录
@@ -59,12 +74,17 @@ list_processes() {
 
     local count=0
     echo "$processes" | while read -r line; do
+        # 跳过空行
+        [[ -z "$line" ]] && continue
+
         local pid=$(echo "$line" | awk '{print $2}')
-        local tty=$(echo "$line" | awk '{print $3}')
+        # 跳过已结束的进程
+        ps -p "$pid" > /dev/null 2>&1 || continue
+
+        local tty=$(echo "$line" | awk '{print $7}')   # TTY 是第 7 列
         local ppid=$(ps -p "$pid" -o ppid= | tr -d ' ')
         local parent=$(ps -p "$ppid" -o comm= 2>/dev/null || echo "unknown")
         local cwd=$(get_cwd "$pid")
-        local time=$(echo "$line" | awk '{print $10}')
         local elapsed=$(ps -p "$pid" -o etime= | tr -d ' ')
 
         # 截断目录名
@@ -81,8 +101,8 @@ list_processes() {
             printf "${GREEN}%-6s %-8s %-8s %-20s %-50s %-10s${NC}\n" "$pid" "$tty" "$ppid" "$parent" "$cwd" "$elapsed"
         fi
 
-        ((count++))
-    done
+        ((count++)) || true
+    done || true
 
     echo -e "\n${CYAN}提示:${NC}"
     echo -e "  ${RED}红色${NC}: 重复工程 (建议关闭其中一个)"
