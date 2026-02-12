@@ -218,8 +218,8 @@ watch_mode() {
     while true; do
         clear
         list_processes
-        echo -e "\n${CYAN}按 Ctrl+C 退出 (每5秒刷新)${NC}"
-        sleep 5
+        echo -e "\n${CYAN}按 Ctrl+C 退出 (每10秒刷新)${NC}"
+        sleep 10
     done
 }
 
